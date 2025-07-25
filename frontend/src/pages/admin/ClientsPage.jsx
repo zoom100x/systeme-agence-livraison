@@ -1,27 +1,57 @@
 import React, { useState } from 'react';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
+import { Badge } from '../../components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../../components/ui/table';
-import { Badge } from '../../components/ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '../../components/ui/dialog';
-import { Label } from '../../components/ui/label';
-import { Alert, AlertDescription } from '../../components/ui/alert';
 import { useClients, useCreateClient, useUpdateClient, useDeleteClient } from '../../hooks/useApi';
 import { Search, Plus, Edit, Trash2, Mail, Phone, MapPin } from 'lucide-react';
 import { formatDate } from '../../utils/helpers';
+import ClientForm from '../../components/admin/ClientForm';
+import { useCallback } from 'react';
 
 const ClientsPage = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [selectedClient, setSelectedClient] = useState(null);
-  const [formData, setFormData] = useState({
-    nom: '',
-    email: '',
-    telephone: '',
-    adresse: '',
-  });
+  const initialFormData = {
+    identite: {
+      civilite: '',
+      nom: '',
+      prenom: '',
+      dateNaissance: '',
+    },
+    contact: {
+      email: '',
+      telephones: [
+        { type: 'mobile', numero: '', estPrincipal: true },
+      ],
+      notification: { sms: false, email: false, push: false },
+    },
+    adresses: [
+      {
+        alias: '',
+        type: '',
+        ligne1: '',
+        ligne2: '',
+        codePostal: '',
+        ville: '',
+        pays: 'Maroc',
+        instructions: '',
+        horairesLivraison: { jours: [], creneau: '' },
+      },
+    ],
+    paiement: { mode: '', statut: 'non payé' },
+    compte: {
+      statut: 'actif',
+      dernierAcces: '',
+      preferences: { langue: 'fr', devise: 'EUR' },
+    },
+    metadata: {},
+  };
+  const [formData, setFormData] = useState(initialFormData);
   const [error, setError] = useState('');
 
   const { data: clients = [], isLoading } = useClients();
@@ -30,58 +60,127 @@ const ClientsPage = () => {
   const deleteClientMutation = useDeleteClient();
 
   // Filtrer les clients selon le terme de recherche
-  const filteredClients = clients.filter(client =>
-    client.nom?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    client.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    client.telephone?.includes(searchTerm)
-  );
+  const filteredClients = clients.filter(client => {
+    const nom = client.identite?.nom?.toLowerCase() || '';
+    const prenom = client.identite?.prenom?.toLowerCase() || '';
+    const email = client.contact?.email?.toLowerCase() || '';
+    const telephones = (client.contact?.telephones || []).map(t => t.numero).join(' ');
+    return (
+      nom.includes(searchTerm.toLowerCase()) ||
+      prenom.includes(searchTerm.toLowerCase()) ||
+      email.includes(searchTerm.toLowerCase()) ||
+      telephones.includes(searchTerm)
+    );
+  });
 
   const handleInputChange = (e) => {
-    const { name, value } = e.target;
-    setFormData(prev => ({
-      ...prev,
-      [name]: value,
-    }));
+    const { name, value, type, checked } = e.target;
+    // Support nested fields and arrays
+    if (name.startsWith('identite.')) {
+      const key = name.split('.')[1];
+      setFormData(prev => ({ ...prev, identite: { ...prev.identite, [key]: value } }));
+    } else if (name.startsWith('contact.email')) {
+      setFormData(prev => ({ ...prev, contact: { ...prev.contact, email: value } }));
+    } else if (name.startsWith('contact.telephones.')) {
+      // e.g. contact.telephones.0.numero or contact.telephones.0.type
+      const [, , idx, field] = name.split('.');
+      setFormData(prev => {
+        const telephones = [...prev.contact.telephones];
+        telephones[Number(idx)] = {
+          ...telephones[Number(idx)],
+          [field]: field === 'estPrincipal' ? checked : value,
+        };
+        return { ...prev, contact: { ...prev.contact, telephones } };
+      });
+    } else if (name.startsWith('contact.notification.')) {
+      const key = name.split('.')[2];
+      setFormData(prev => ({ ...prev, contact: { ...prev.contact, notification: { ...prev.contact.notification, [key]: checked } } }));
+    } else if (name.startsWith('adresses.')) {
+      // e.g. adresses.0.ligne1
+      const [, idx, field, subfield] = name.split('.');
+      setFormData(prev => {
+        const adresses = [...prev.adresses];
+        if (field === 'horairesLivraison') {
+          if (subfield === 'jours') {
+            // Multi-select for jours
+            const options = Array.from(e.target.selectedOptions).map(opt => opt.value);
+            adresses[Number(idx)].horairesLivraison.jours = options;
+          } else {
+            adresses[Number(idx)].horairesLivraison[subfield] = value;
+          }
+        } else {
+          adresses[Number(idx)][field] = value;
+        }
+        return { ...prev, adresses };
+      });
+    } else if (name.startsWith('paiement.')) {
+      const key = name.split('.')[1];
+      setFormData(prev => ({ ...prev, paiement: { ...prev.paiement, [key]: value } }));
+    } else if (name.startsWith('compte.')) {
+      const key = name.split('.')[1];
+      if (key === 'preferences') {
+        const prefKey = name.split('.')[2];
+        setFormData(prev => ({ ...prev, compte: { ...prev.compte, preferences: { ...prev.compte.preferences, [prefKey]: value } } }));
+      } else {
+        setFormData(prev => ({ ...prev, compte: { ...prev.compte, [key]: value } }));
+      }
+    } else {
+      setFormData(prev => ({ ...prev, [name]: value }));
+    }
   };
 
   const resetForm = () => {
-    setFormData({
-      nom: '',
-      email: '',
-      telephone: '',
-      adresse: '',
-    });
+    setFormData(initialFormData);
     setError('');
   };
 
-  const handleCreateClient = async (e) => {
-    e.preventDefault();
-    setError('');
+  const handleCreateClient = useCallback(
+    async (e) => {
 
-    try {
-      await createClientMutation.mutateAsync(formData);
-      setIsCreateDialogOpen(false);
-      resetForm();
-    } catch (err) {
-      setError(err.response?.data?.message || 'Erreur lors de la création du client');
-    }
-  };
+      setError('');
+      try {
+        await createClientMutation.mutateAsync(formData);
+        setIsCreateDialogOpen(false);
+        resetForm();
+      } catch (err) {
+        setError(err.response?.data?.message || 'Erreur lors de la création du client');
+      }
+    }, [formData, createClientMutation])
 
   const handleEditClient = (client) => {
     setSelectedClient(client);
     setFormData({
-      nom: client.nom || '',
-      email: client.email || '',
-      telephone: client.telephone || '',
-      adresse: client.adresse || '',
+      identite: { ...client.identite },
+      contact: {
+        ...client.contact,
+        telephones: client.contact?.telephones?.length ? client.contact.telephones.map(t => ({ ...t })) : [{ type: 'mobile', numero: '', estPrincipal: true }],
+        notification: { ...client.contact?.notification },
+      },
+      adresses: client.adresses?.length ? client.adresses.map(a => ({ ...a, horairesLivraison: { ...a.horairesLivraison } })) : [
+        {
+          alias: '',
+          type: '',
+          ligne1: '',
+          ligne2: '',
+          codePostal: '',
+          ville: '',
+          pays: 'Maroc',
+          instructions: '',
+          horairesLivraison: { jours: [], creneau: '' },
+        },
+      ],
+      paiement: { ...client.paiement },
+      compte: {
+        ...client.compte,
+        preferences: { ...client.compte?.preferences },
+      },
+      metadata: client.metadata || {},
     });
     setIsEditDialogOpen(true);
   };
 
-  const handleUpdateClient = async (e) => {
-    e.preventDefault();
+  const handleUpdateClient = useCallback(async (e) => {
     setError('');
-
     try {
       await updateClientMutation.mutateAsync({
         id: selectedClient._id,
@@ -93,7 +192,7 @@ const ClientsPage = () => {
     } catch (err) {
       setError(err.response?.data?.message || 'Erreur lors de la mise à jour du client');
     }
-  };
+  }, [formData, updateClientMutation, selectedClient]);
 
   const handleDeleteClient = async (clientId) => {
     if (window.confirm('Êtes-vous sûr de vouloir supprimer ce client ?')) {
@@ -104,71 +203,6 @@ const ClientsPage = () => {
       }
     }
   };
-
-  const ClientForm = ({ onSubmit, submitLabel }) => (
-    <form onSubmit={onSubmit} className="space-y-4">
-      {error && (
-        <Alert variant="destructive">
-          <AlertDescription>{error}</AlertDescription>
-        </Alert>
-      )}
-      
-      <div className="space-y-2">
-        <Label htmlFor="nom">Nom complet</Label>
-        <Input
-          id="nom"
-          name="nom"
-          value={formData.nom}
-          onChange={handleInputChange}
-          placeholder="Jean Dupont"
-          required
-        />
-      </div>
-      
-      <div className="space-y-2">
-        <Label htmlFor="email">Email</Label>
-        <Input
-          id="email"
-          name="email"
-          type="email"
-          value={formData.email}
-          onChange={handleInputChange}
-          placeholder="jean.dupont@email.com"
-          required
-        />
-      </div>
-      
-      <div className="space-y-2">
-        <Label htmlFor="telephone">Téléphone</Label>
-        <Input
-          id="telephone"
-          name="telephone"
-          value={formData.telephone}
-          onChange={handleInputChange}
-          placeholder="06 12 34 56 78"
-          required
-        />
-      </div>
-      
-      <div className="space-y-2">
-        <Label htmlFor="adresse">Adresse</Label>
-        <Input
-          id="adresse"
-          name="adresse"
-          value={formData.adresse}
-          onChange={handleInputChange}
-          placeholder="123 Rue de la Paix, 75001 Paris"
-          required
-        />
-      </div>
-      
-      <DialogFooter>
-        <Button type="submit" disabled={createClientMutation.isPending || updateClientMutation.isPending}>
-          {submitLabel}
-        </Button>
-      </DialogFooter>
-    </form>
-  );
 
   if (isLoading) {
     return (
@@ -197,7 +231,7 @@ const ClientsPage = () => {
             Gérez vos clients et leurs informations
           </p>
         </div>
-        
+
         <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
           <DialogTrigger asChild>
             <Button onClick={resetForm}>
@@ -212,7 +246,15 @@ const ClientsPage = () => {
                 Ajoutez un nouveau client à votre base de données.
               </DialogDescription>
             </DialogHeader>
-            <ClientForm onSubmit={handleCreateClient} submitLabel="Créer le client" />
+            <ClientForm
+              onSubmit={handleCreateClient}
+              submitLabel="Créer le client"
+              error={error}
+              formData={formData}
+              setFormData={setFormData}
+              handleInputChange={handleInputChange}
+              createClientMutation={createClientMutation}
+              updateClientMutation={updateClientMutation} />
           </DialogContent>
         </Dialog>
       </div>
@@ -255,28 +297,28 @@ const ClientsPage = () => {
               {filteredClients.map((client) => (
                 <TableRow key={client._id}>
                   <TableCell className="font-medium">
-                    {client.nom}
+                    {client.identite?.civilite} {client.identite?.prenom} {client.identite?.nom}
                   </TableCell>
                   <TableCell>
                     <div className="space-y-1">
                       <div className="flex items-center text-sm">
                         <Mail className="mr-2 h-3 w-3" />
-                        {client.email}
+                        {client.contact?.email}
                       </div>
                       <div className="flex items-center text-sm text-muted-foreground">
                         <Phone className="mr-2 h-3 w-3" />
-                        {client.telephone}
+                        {client.contact?.telephones?.find(t => t.estPrincipal)?.numero || client.contact?.telephones?.[0]?.numero}
                       </div>
                     </div>
                   </TableCell>
                   <TableCell>
                     <div className="flex items-center text-sm">
                       <MapPin className="mr-2 h-3 w-3" />
-                      {client.adresse}
+                      {formatAdresse(client.adresses?.[0])}
                     </div>
                   </TableCell>
                   <TableCell>
-                    {formatDate(client.createdAt)}
+                    {formatDate(client.compte?.dateCreation)}
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end space-x-2">
@@ -301,7 +343,7 @@ const ClientsPage = () => {
               ))}
             </TableBody>
           </Table>
-          
+
           {filteredClients.length === 0 && (
             <div className="text-center py-8">
               <p className="text-muted-foreground">
@@ -321,7 +363,15 @@ const ClientsPage = () => {
               Modifiez les informations du client.
             </DialogDescription>
           </DialogHeader>
-          <ClientForm onSubmit={handleUpdateClient} submitLabel="Mettre à jour" />
+          <ClientForm
+            onSubmit={handleUpdateClient}
+            submitLabel="Mettre à jour"
+            error={error}
+            formData={formData}
+            setFormData={setFormData}
+            handleInputChange={handleInputChange}
+            createClientMutation={createClientMutation}
+            updateClientMutation={updateClientMutation} />
         </DialogContent>
       </Dialog>
     </div>
@@ -329,4 +379,9 @@ const ClientsPage = () => {
 };
 
 export default ClientsPage;
+
+function formatAdresse(adresse) {
+  if (!adresse) return '';
+  return [adresse.ligne1, adresse.ligne2, adresse.codePostal, adresse.ville, adresse.pays].filter(Boolean).join(', ');
+}
 

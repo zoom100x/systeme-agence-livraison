@@ -4,8 +4,10 @@ const {
   creerCommande,
   getCommandes,
   getCommandeById,
+  updateCommande,
   updateStatutCommande,
-  deleteCommande
+  deleteCommande,
+  getCommandesByLivreur
 } = require('../controllers/commandeController');
 
 // Créer une commande
@@ -18,9 +20,14 @@ router.get('/', getCommandes);
 router.get('/:id', getCommandeById);
 
 // Mettre à jour le statut d'une commande
-router.put('/:id', updateStatutCommande);
+router.put('/statut/:id', updateStatutCommande);
 
 // Supprimer une commande
 router.delete('/:id', deleteCommande);
+
+router.put('/:id', updateCommande);
+
+//obtenir une commande par livreur
+router.get('/livreur/:livreurId', getCommandesByLivreur);
 
 module.exports = router;

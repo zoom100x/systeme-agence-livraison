@@ -1,4 +1,5 @@
 import React from 'react';
+import {useNavigate} from 'react-router-dom'
 import { useAuth } from '../../contexts/AuthContext';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
@@ -17,10 +18,12 @@ import { ORDER_STATUS, ORDER_STATUS_LABELS, ORDER_STATUS_COLORS } from '../../ut
 import { formatDate, formatPrice } from '../../utils/helpers';
 
 const LivreurDashboard = () => {
+
+  const navigate = useNavigate();
   const { user } = useAuth();
   const { data: deliveries = [], isLoading } = useDeliveries(user?.id);
+  
   const updateStatusMutation = useUpdateOrderStatus();
-
   // Filtrer les livraisons selon leur statut
   const pendingDeliveries = deliveries.filter(delivery => 
     delivery.statut === ORDER_STATUS.PENDING || delivery.statut === ORDER_STATUS.SHIPPED
@@ -34,8 +37,9 @@ const LivreurDashboard = () => {
     try {
       await updateStatusMutation.mutateAsync({ 
         id: orderId, 
-        status: ORDER_STATUS.DELIVERED 
+        statut: ORDER_STATUS.DELIVERED 
       });
+      navigate(0);
     } catch (error) {
       console.error('Erreur lors de la mise à jour du statut:', error);
     }
@@ -45,8 +49,9 @@ const LivreurDashboard = () => {
     try {
       await updateStatusMutation.mutateAsync({ 
         id: orderId, 
-        status: ORDER_STATUS.SHIPPED 
+        statut: ORDER_STATUS.SHIPPED 
       });
+      navigate(0);
     } catch (error) {
       console.error('Erreur lors de la mise à jour du statut:', error);
     }
@@ -80,27 +85,26 @@ const LivreurDashboard = () => {
         <div className="flex items-center space-x-3 p-3 bg-gray-50 rounded-lg">
           <User className="h-5 w-5 text-gray-600" />
           <div>
-            <p className="font-medium">{delivery.client?.nom}</p>
+            <p className="font-medium">{delivery.client_id?.identite?.prenom} {delivery.client_id?.identite?.nom}</p>
             <div className="flex items-center space-x-2 text-sm text-gray-600">
               <Phone className="h-4 w-4" />
-              <span>{delivery.client?.telephone}</span>
+              <span>{delivery.client_id?.contact?.telephones?.find(t => t.estPrincipal)?.numero || delivery.client_id?.contact?.telephones?.[0]?.numero}</span>
             </div>
           </div>
         </div>
-
         {/* Adresse de livraison */}
         <div className="flex items-start space-x-3 p-3 bg-blue-50 rounded-lg">
           <MapPin className="h-5 w-5 text-blue-600 mt-0.5" />
           <div className="flex-1">
             <p className="font-medium text-blue-900">Adresse de livraison</p>
             <p className="text-sm text-blue-700">
-              {delivery.adresseLivraison || delivery.client?.adresse}
+              {delivery.adresseLivraison || formatAdresse(delivery.client_id?.adresses?.[0])}
             </p>
             <Button
               variant="outline"
               size="sm"
               className="mt-2"
-              onClick={() => openInMaps(delivery.adresseLivraison || delivery.client?.adresse)}
+              onClick={() => openInMaps(delivery.adresseLivraison || formatAdresse(delivery.client_id?.adresses?.[0]))}
             >
               <Navigation className="mr-2 h-4 w-4" />
               Ouvrir dans Maps
@@ -125,7 +129,7 @@ const LivreurDashboard = () => {
           <div className="space-y-2">
             {delivery.produits?.map((produit, index) => (
               <div key={index} className="flex justify-between items-center p-2 bg-gray-50 rounded">
-                <span className="text-sm">{produit.nom}</span>
+                <span className="text-sm">{produit.produit_id.nom}</span>
                 <span className="text-sm font-medium">x{produit.quantite}</span>
               </div>
             ))}
@@ -134,7 +138,7 @@ const LivreurDashboard = () => {
             <div className="flex justify-between items-center">
               <span className="font-medium">Total</span>
               <span className="text-lg font-bold text-green-600">
-                {formatPrice(delivery.total)}
+                {formatPrice(getOrderTotal(delivery))}
               </span>
             </div>
           </div>
@@ -292,6 +296,17 @@ const LivreurDashboard = () => {
     </div>
   );
 };
+
+function formatAdresse(adresse) {
+  if (!adresse) return '';
+  return [adresse.ligne1, adresse.ligne2, adresse.codePostal, adresse.ville, adresse.pays].filter(Boolean).join(', ');
+}
+
+// Helper to calculate total
+function getOrderTotal(order) {
+  if (!order?.produits) return 0;
+  return order.produits.reduce((sum, p) => sum + (p.produit_id?.prix || 0) * p.quantite, 0);
+}
 
 export default LivreurDashboard;
 

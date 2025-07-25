@@ -100,7 +100,7 @@ export const orderService = {
   }),
   
   // Modifier statut
-  updateOrderStatus: (id, status) => api.patch(`/commandes/${id}/status`, { status }),
+  updateOrderStatus: (id, statut) => api.put(`/commandes/statut/${id}`, {statut}),
   
   // Ajouter instructions et adresse de livraison
   updateOrderDelivery: (id, deliveryData) => api.patch(`/commandes/${id}/delivery`, deliveryData),
@@ -122,7 +122,7 @@ export const livreurService = {
   deleteLivreur: (id) => api.delete(`/livreurs/${id}`),
   
   // Obtenir les livraisons assignées à un livreur
-  getDeliveries: (livreurId) => api.get(`/livreurs/${livreurId}/deliveries`),
+  getDeliveries: (livreurId) => api.get(`/commandes/livreur/${livreurId}`),
 };
 
 export default api;

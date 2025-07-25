@@ -20,7 +20,6 @@ const OrdersPage = () => {
   const [isDetailsDialogOpen, setIsDetailsDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [deliveryData, setDeliveryData] = useState({
-    instructions: '',
     adresseLivraison: '',
   });
 
@@ -31,18 +30,16 @@ const OrdersPage = () => {
   // Filtrer les commandes
   const filteredOrders = orders.filter(order => {
     const matchesSearch = 
-      order.client?.nom?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      order.client_id?.identite?.nom?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       order._id?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      order.produits?.some(p => p.nom?.toLowerCase().includes(searchTerm.toLowerCase()));
-    
+      order.produits?.some(p => p.produit_id?.nom?.toLowerCase().includes(searchTerm.toLowerCase()));
     const matchesStatus = statusFilter === 'all' || order.statut === statusFilter;
-    
     return matchesSearch && matchesStatus;
   });
 
-  const handleStatusChange = async (orderId, newStatus) => {
+  const handleStatusChange = async (orderId, statut) => {
     try {
-      await updateStatusMutation.mutateAsync({ id: orderId, status: newStatus });
+      await updateStatusMutation.mutateAsync({ id: orderId, statut });
     } catch (error) {
       console.error('Erreur lors de la mise à jour du statut:', error);
     }
@@ -56,8 +53,7 @@ const OrdersPage = () => {
   const handleEditDelivery = (order) => {
     setSelectedOrder(order);
     setDeliveryData({
-      instructions: order.instructionsLivraison || '',
-      adresseLivraison: order.adresseLivraison || order.client?.adresse || '',
+      adresseLivraison: formatAdresse(order.adresse_livraison),
     });
     setIsEditDialogOpen(true);
   };
@@ -68,8 +64,7 @@ const OrdersPage = () => {
       await updateDeliveryMutation.mutateAsync({
         id: selectedOrder._id,
         deliveryData: {
-          instructionsLivraison: deliveryData.instructions,
-          adresseLivraison: deliveryData.adresseLivraison,
+          adresse_livraison: parseAdresse(deliveryData.adresseLivraison),
         },
       });
       setIsEditDialogOpen(false);
@@ -81,13 +76,13 @@ const OrdersPage = () => {
 
   const getStatusIcon = (status) => {
     switch (status) {
-      case ORDER_STATUS.PENDING:
+      case 'en attente':
         return <Clock className="h-4 w-4" />;
-      case ORDER_STATUS.SHIPPED:
+      case 'expédiée':
         return <Truck className="h-4 w-4" />;
-      case ORDER_STATUS.DELIVERED:
+      case 'livrée':
         return <CheckCircle className="h-4 w-4" />;
-      case ORDER_STATUS.CANCELLED:
+      case 'annulée':
         return <XCircle className="h-4 w-4" />;
       default:
         return <Package className="h-4 w-4" />;
@@ -181,9 +176,12 @@ const OrdersPage = () => {
                   </TableCell>
                   <TableCell>
                     <div>
-                      <div className="font-medium">{order.client?.nom}</div>
+                      <div className="font-medium">{order.client_id?.identite?.civilite} {order.client_id?.identite?.prenom} {order.client_id?.identite?.nom}</div>
                       <div className="text-sm text-muted-foreground">
-                        {order.client?.email}
+                        {order.client_id?.contact?.email}
+                      </div>
+                      <div className="text-sm text-muted-foreground">
+                        {order.client_id?.contact?.telephones?.find(t => t.estPrincipal)?.numero || order.client_id?.contact?.telephones?.[0]?.numero}
                       </div>
                     </div>
                   </TableCell>
@@ -191,7 +189,7 @@ const OrdersPage = () => {
                     <div className="space-y-1">
                       {order.produits?.slice(0, 2).map((produit, index) => (
                         <div key={index} className="text-sm">
-                          {produit.nom} x{produit.quantite}
+                          {produit.produit_id?.nom} x{produit.quantite}
                         </div>
                       ))}
                       {order.produits?.length > 2 && (
@@ -202,13 +200,13 @@ const OrdersPage = () => {
                     </div>
                   </TableCell>
                   <TableCell className="font-medium">
-                    {formatPrice(order.total)}
+                    {formatPrice(getOrderTotal(order))}
                   </TableCell>
                   <TableCell>
                     <div className="flex items-center space-x-2">
                       <Badge className={ORDER_STATUS_COLORS[order.statut]}>
                         {getStatusIcon(order.statut)}
-                        <span className="ml-1">{ORDER_STATUS_LABELS[order.statut]}</span>
+                        <span className="ml-1">{ORDER_STATUS_LABELS[order.statut] || order.statut}</span>
                       </Badge>
                       <Select
                         value={order.statut}
@@ -228,7 +226,7 @@ const OrdersPage = () => {
                     </div>
                   </TableCell>
                   <TableCell>
-                    {formatDate(order.createdAt)}
+                    {formatDate(order.date_commande)}
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end space-x-2">
@@ -274,50 +272,54 @@ const OrdersPage = () => {
               Informations complètes sur la commande #{selectedOrder?._id?.slice(-8)}
             </DialogDescription>
           </DialogHeader>
-          
           {selectedOrder && (
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <Label className="text-sm font-medium">Client</Label>
-                  <p className="text-sm">{selectedOrder.client?.nom}</p>
-                  <p className="text-sm text-muted-foreground">{selectedOrder.client?.email}</p>
+                  <p className="text-sm">{selectedOrder.client_id?.identite?.civilite} {selectedOrder.client_id?.identite?.prenom} {selectedOrder.client_id?.identite?.nom}</p>
+                  <p className="text-sm text-muted-foreground">{selectedOrder.client_id?.contact?.email}</p>
+                  <p className="text-sm text-muted-foreground">{selectedOrder.client_id?.contact?.telephones?.find(t => t.estPrincipal)?.numero || selectedOrder.client_id?.contact?.telephones?.[0]?.numero}</p>
                 </div>
                 <div>
                   <Label className="text-sm font-medium">Statut</Label>
                   <Badge className={ORDER_STATUS_COLORS[selectedOrder.statut]}>
-                    {ORDER_STATUS_LABELS[selectedOrder.statut]}
+                    {ORDER_STATUS_LABELS[selectedOrder.statut] || selectedOrder.statut}
                   </Badge>
                 </div>
               </div>
-              
               <div>
                 <Label className="text-sm font-medium">Produits commandés</Label>
                 <div className="mt-2 space-y-2">
                   {selectedOrder.produits?.map((produit, index) => (
                     <div key={index} className="flex justify-between items-center p-2 bg-gray-50 rounded">
-                      <span>{produit.nom}</span>
-                      <span>x{produit.quantite} - {formatPrice(produit.prix * produit.quantite)}</span>
+                      <span>{produit.produit_id?.nom}</span>
+                      <span>x{produit.quantite} - {formatPrice(produit.produit_id?.prix * produit.quantite)}</span>
                     </div>
                   ))}
                 </div>
               </div>
-              
               <div>
                 <Label className="text-sm font-medium">Adresse de livraison</Label>
-                <p className="text-sm">{selectedOrder.adresseLivraison || selectedOrder.client?.adresse}</p>
+                <AdresseDetails adresse={selectedOrder.adresse_livraison || selectedOrder.client_id?.adresses?.[0]} />
               </div>
-              
-              {selectedOrder.instructionsLivraison && (
+              {selectedOrder.livreur_id && (
                 <div>
-                  <Label className="text-sm font-medium">Instructions de livraison</Label>
-                  <p className="text-sm">{selectedOrder.instructionsLivraison}</p>
+                  <Label className="text-sm font-medium">Livreur</Label>
+                  <p className="text-sm">{selectedOrder.livreur_id?.nom}</p>
+                  <p className="text-sm text-muted-foreground">{selectedOrder.livreur_id?.email}</p>
                 </div>
               )}
-              
+              {selectedOrder.paiement && (
+                <div>
+                  <Label className="text-sm font-medium">Paiement</Label>
+                  <p className="text-sm">Mode: {selectedOrder.paiement.mode}</p>
+                  <p className="text-sm">Statut: {selectedOrder.paiement.statut}</p>
+                </div>
+              )}
               <div className="flex justify-between items-center pt-4 border-t">
                 <span className="font-medium">Total</span>
-                <span className="text-lg font-bold">{formatPrice(selectedOrder.total)}</span>
+                <span className="text-lg font-bold">{formatPrice(getOrderTotal(selectedOrder))}</span>
               </div>
             </div>
           )}
@@ -328,12 +330,11 @@ const OrdersPage = () => {
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Modifier les informations de livraison</DialogTitle>
+            <DialogTitle>Modifier l'adresse de livraison</DialogTitle>
             <DialogDescription>
-              Mettez à jour l'adresse et les instructions de livraison
+              Mettez à jour l'adresse de livraison
             </DialogDescription>
           </DialogHeader>
-          
           <form onSubmit={handleUpdateDelivery} className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="adresseLivraison">Adresse de livraison</Label>
@@ -348,21 +349,6 @@ const OrdersPage = () => {
                 required
               />
             </div>
-            
-            <div className="space-y-2">
-              <Label htmlFor="instructions">Instructions de livraison</Label>
-              <Textarea
-                id="instructions"
-                value={deliveryData.instructions}
-                onChange={(e) => setDeliveryData(prev => ({
-                  ...prev,
-                  instructions: e.target.value
-                }))}
-                placeholder="Instructions spéciales pour la livraison..."
-                rows={3}
-              />
-            </div>
-            
             <DialogFooter>
               <Button type="submit" disabled={updateDeliveryMutation.isPending}>
                 Mettre à jour
@@ -376,4 +362,38 @@ const OrdersPage = () => {
 };
 
 export default OrdersPage;
+
+
+// Helper to format adresse object as string
+function formatAdresse(adresse) {
+  if (!adresse) return '';
+  return [adresse.ligne1, adresse.ligne2, adresse.codePostal, adresse.ville, adresse.pays].filter(Boolean).join(', ');
+}
+// Helper to parse adresse string back to object (simple version)
+function parseAdresse(adresseStr) {
+  // This should be improved for real use
+  const [ligne1 = '', ligne2 = '', codePostal = '', ville = '', pays = 'Maroc'] = adresseStr.split(',').map(s => s.trim());
+  return { ligne1, ligne2, codePostal, ville, pays };
+}
+// Component to display adresse details
+function AdresseDetails({ adresse }) {
+  if (!adresse) return <span className="text-muted-foreground">Non renseignée</span>;
+  return (
+    <div className="space-y-1">
+      <div>{adresse.alias && <span className="font-medium">{adresse.alias} </span>}{adresse.ligne1}</div>
+      {adresse.ligne2 && <div>{adresse.ligne2}</div>}
+      <div>{adresse.codePostal} {adresse.ville}, {adresse.pays}</div>
+      {adresse.type && <div>Type: {adresse.type}</div>}
+      {adresse.instructions && <div>Instructions: {adresse.instructions}</div>}
+      {adresse.horairesLivraison && (
+        <div>Horaires: {adresse.horairesLivraison.jours?.join(', ')} {adresse.horairesLivraison.creneau}</div>
+      )}
+    </div>
+  );
+}
+// Helper to calculate total
+function getOrderTotal(order) {
+  if (!order?.produits) return 0;
+  return order.produits.reduce((sum, p) => sum + (p.produit_id?.prix || 0) * p.quantite, 0);
+}
 

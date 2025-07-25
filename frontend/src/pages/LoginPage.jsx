@@ -166,9 +166,9 @@ const LoginPage = () => {
               </form>
               
               <div className="text-sm text-gray-600 bg-gray-50 p-3 rounded-md">
-                <p className="font-medium">Compte de démonstration :</p>
-                <p>Email: admin@delivery.com</p>
-                <p>Mot de passe: admin123</p>
+                <p className="font-medium">Compte admin :</p>
+                <p>Email: test@dev.com</p>
+                <p>Mot de passe: 123456789</p>
               </div>
             </TabsContent>
             
